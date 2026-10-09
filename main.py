@@ -44,12 +44,17 @@ def get_mk_number_sync(target_range):
         res = requests.post(f"{BASE_API_URL}/getnum/number", headers=headers, json=payload, timeout=10.0)
         if res.status_code == 200:
             res_data = res.json()
-            data = res_data.get("data", {})
-            phone = data.get("full_number") or data.get("number")
-            req_id = data.get("request_id")
-            country = data.get("country", "International")
-            if phone and req_id:
-                return str(phone), int(req_id), str(country)
+            if res_data.get("status") == True or res_data.get("success") == True or "data" in res_data:
+                data = res_data.get("data", {})
+                if isinstance(data, list) and len(data) > 0:
+                    data = data[0]
+                
+                phone = data.get("full_number") or data.get("number") or data.get("phone")
+                req_id = data.get("request_id") or data.get("id")
+                country = data.get("country", "International")
+                
+                if phone and req_id:
+                    return str(phone), int(req_id), str(country)
     except Exception as e:
         print(f"MK API Error: {e}")
     return None, None, None
@@ -145,7 +150,6 @@ async def personal_otp_checker(application):
                                 except Exception as per_ex:
                                     print(f"Personal Send Error: {per_ex}")
 
-                                # গ্রুপে ফরোয়ার্ড করা
                                 group_text = (
                                     f"🟢 <b>SMS OTP RECEIVED</b>\n\n"
                                     f"🌍 <b>Country :</b> {country} ({flag})\n"
