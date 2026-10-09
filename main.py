@@ -1,7 +1,6 @@
 import os
 import asyncio
 import requests
-import re
 import time
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, CopyTextButton
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
@@ -10,7 +9,6 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN")
 
 MK_API_KEY = "2c237a7e888476faed46f6f2"
 BASE_API_URL = "https://mknetworkbd.com/api/v2/public"
-YOUR_TELEGRAM_USERNAME = "smm_otp_grup"
 SUPPORT_USERNAME = "tmtamimmia"
 OTP_GROUP_CHAT_ID = -1004436883235
 
@@ -18,7 +16,6 @@ USER_STATES = {}
 USER_RANGES = {}
 USER_BALANCES = {}  
 USER_WITHDRAW_INFO = {} 
-SEEN_OTP_IDS = set()
 ACTIVE_USER_NUMBERS = {} 
 
 def get_country_info(phone_number, api_country=""):
@@ -44,17 +41,17 @@ def get_mk_number_sync(target_range):
         res = requests.post(f"{BASE_API_URL}/getnum/number", headers=headers, json=payload, timeout=10.0)
         if res.status_code == 200:
             res_data = res.json()
-            if res_data.get("status") == True or res_data.get("success") == True or "data" in res_data:
-                data = res_data.get("data", {})
-                if isinstance(data, list) and len(data) > 0:
-                    data = data[0]
-                
-                phone = data.get("full_number") or data.get("number") or data.get("phone")
-                req_id = data.get("request_id") or data.get("id")
-                country = data.get("country", "International")
-                
-                if phone and req_id:
-                    return str(phone), int(req_id), str(country)
+            data = res_data.get("data", {})
+            if isinstance(data, list) and len(data) > 0:
+                data = data[0]
+            
+            # API v2 অনুযায়ী সঠিক ফিল্ড চেক
+            phone = data.get("full_number") or data.get("number")
+            req_id = data.get("request_id")
+            country = data.get("country", "International")
+            
+            if phone and req_id:
+                return str(phone), int(req_id), str(country)
     except Exception as e:
         print(f"MK API Error: {e}")
     return None, None, None
@@ -120,22 +117,18 @@ async def personal_otp_checker(application):
 
                             if not otp_code: continue
 
-                            # গ্লোবাল গ্রুপে পাঠানোর জন্য ডুপ্লিকেট চেক (একই OTP বারবার গ্রুপে যাওয়া রোধ করতে)
                             global_sent_otps = u_info.setdefault("global_sent_otps", set())
-                            
-                            # ইউজারের পার্সোনাল বটে পাঠানোর জন্য চেক
                             sent_set = u_info.setdefault("sent_otps", set())
                             
+                            # ইউজারের পার্সোনাল বটে শুধু তার নিজস্ব নাম্বারের OTP পাঠানো এবং ২০ পয়সা যোগ করা
                             if str(otp_code) not in sent_set:
                                 sent_set.add(str(otp_code))
                                 
-                                # প্রতি OTP এর জন্য ২০ পয়সা (0.20 টাকা) যোগ করা
                                 current_bal = USER_BALANCES.get(user_id, 0.0)
                                 USER_BALANCES[user_id] = current_bal + 0.20
 
                                 _, _, flag = get_country_info(u_phone, country)
                                 
-                                # ১. শুধু ইউজারের পার্সোনাল বটে নতুন OTP পাঠানো
                                 personal_text = (
                                     f"🟢 <b>NEW OTP RECEIVED</b>\n\n"
                                     f"🌐 <b>Service :</b> SMS\n"
@@ -159,10 +152,11 @@ async def personal_otp_checker(application):
                                 except Exception as per_ex:
                                     print(f"Personal Send Error: {per_ex}")
 
+                            # প্যানেলের সব রিয়েল OTP মূল গ্রুপে (-1004436883235) পাঠানো
                             if str(otp_code) not in global_sent_otps:
                                 global_sent_otps.add(str(otp_code))
                                 _, _, flag = get_country_info(u_phone, country)
-                                # ২. প্যানেলের রিয়েল OTP মূল গ্রুপে পাঠানো (-1004436883235)
+                                
                                 group_text = (
                                     f"🟢 <b>SMS OTP RECEIVED</b>\n\n"
                                     f"🌍 <b>Country :</b> {country} ({flag})\n"
@@ -283,7 +277,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             USER_STATES[user_id] = None
             traffic_text = f"🕒 <b>Live Traffic & Panel Ranges ({time.strftime('%I:%M %p')})</b>\n\n📊 ধারাবাহিক প্যানেল রেঞ্জসমূহ নিচে দেওয়া হলো:"
             
-            # প্যানেলের বিভিন্ন দেশের ধারাবাহিক রেঞ্জসমূহ
             panel_ranges = ["23762XXX", "88017XXX", "22501XXX", "22899XXX", "26133XXX", "23763XXX", "88018XXX"]
             keyboard = []
             for pr in panel_ranges:
