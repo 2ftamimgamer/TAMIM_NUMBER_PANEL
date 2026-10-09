@@ -62,22 +62,7 @@ def get_mk_number_sync(target_range):
 async def get_mk_number(target_range="23762XXX"):
     return await asyncio.to_thread(get_mk_number_sync, target_range)
 
-def get_traffic_sync():
-    headers = {
-        "mknetwork-key": MK_API_KEY,
-        "Accept": "application/json",
-        "Content-Type": "application/json"
-    }
-    try:
-        # প্যানেল থেকে ট্রাফিক বা রেঞ্জ ডেটা ফেচ করার চেষ্টা
-        res = requests.get(f"{BASE_API_URL}/traffic", headers=headers, timeout=8.0)
-        if res.status_code == 200:
-            return res.json()
-    except Exception as e:
-        print(f"Traffic API Error: {e}")
-    return None
-
-async def check_status_sync(request_ids):
+def check_status_sync(request_ids):
     headers = {
         "mknetwork-key": MK_API_KEY,
         "Accept": "application/json",
@@ -135,7 +120,12 @@ async def personal_otp_checker(application):
 
                             if not otp_code: continue
 
+                            # গ্লোবাল গ্রুপে পাঠানোর জন্য ডুপ্লিকেট চেক (একই OTP বারবার গ্রুপে যাওয়া রোধ করতে)
+                            global_sent_otps = u_info.setdefault("global_sent_otps", set())
+                            
+                            # ইউজারের পার্সোনাল বটে পাঠানোর জন্য চেক
                             sent_set = u_info.setdefault("sent_otps", set())
+                            
                             if str(otp_code) not in sent_set:
                                 sent_set.add(str(otp_code))
                                 
@@ -145,7 +135,7 @@ async def personal_otp_checker(application):
 
                                 _, _, flag = get_country_info(u_phone, country)
                                 
-                                # শুধু উক্ত ইউজারের পার্সোনাল বটে নতুন OTP পাঠানো
+                                # ১. শুধু ইউজারের পার্সোনাল বটে নতুন OTP পাঠানো
                                 personal_text = (
                                     f"🟢 <b>NEW OTP RECEIVED</b>\n\n"
                                     f"🌐 <b>Service :</b> SMS\n"
@@ -169,7 +159,10 @@ async def personal_otp_checker(application):
                                 except Exception as per_ex:
                                     print(f"Personal Send Error: {per_ex}")
 
-                                # প্যানেলের রিয়েল/সব OTP মূল গ্রুপে পাঠানো (-1004436883235)
+                            if str(otp_code) not in global_sent_otps:
+                                global_sent_otps.add(str(otp_code))
+                                _, _, flag = get_country_info(u_phone, country)
+                                # ২. প্যানেলের রিয়েল OTP মূল গ্রুপে পাঠানো (-1004436883235)
                                 group_text = (
                                     f"🟢 <b>SMS OTP RECEIVED</b>\n\n"
                                     f"🌍 <b>Country :</b> {country} ({flag})\n"
@@ -199,7 +192,7 @@ def create_single_number_markup(phone_num):
     keyboard = [
         [InlineKeyboardButton(text=f"{flag} {phone_num}", copy_text=CopyTextButton(text=phone_num))],
         [
-            InlineKeyboardButton("🔔 OTP GROUP", url=f"https://t.me/smm_otp_grup"),
+            InlineKeyboardButton("🔔 OTP GROUP", url="https://t.me/smm_otp_grup"),
             InlineKeyboardButton("🔄 Change", callback_data="change_number")
         ],
         [InlineKeyboardButton("🔙 Back", callback_data="back_home")]
@@ -273,6 +266,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "request_id": req_id,
                 "chat_id": update.effective_chat.id,
                 "sent_otps": set(),
+                "global_sent_otps": set(),
                 "fetch_time": time.time()
             }
 
@@ -287,24 +281,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         elif "Live Traffic" in text or "TRAFFIC" in text:
             USER_STATES[user_id] = None
-            traffic_res = await asyncio.to_thread(get_traffic_sync)
+            traffic_text = f"🕒 <b>Live Traffic & Panel Ranges ({time.strftime('%I:%M %p')})</b>\n\n📊 ধারাবাহিক প্যানেল রেঞ্জসমূহ নিচে দেওয়া হলো:"
             
-            traffic_text = f"🕒 <b>Live Traffic & Ranges ({time.strftime('%I:%M %p')})</b>\n\n📊 ধারাবাহিক প্যানেল রেঞ্জসমূহ নিচে দেওয়া হলো:"
+            # প্যানেলের বিভিন্ন দেশের ধারাবাহিক রেঞ্জসমূহ
+            panel_ranges = ["23762XXX", "88017XXX", "22501XXX", "22899XXX", "26133XXX", "23763XXX", "88018XXX"]
             keyboard = []
+            for pr in panel_ranges:
+                keyboard.append([InlineKeyboardButton(f"📌 Range: {pr}", callback_data=f"range_{pr}")])
             
-            # প্যানেল থেকে রেঞ্জ বা সার্ভিস থাকলে তা ধারাবাহিক ভাবে সাজানো
-            default_ranges = ["23762XXX", "88017XXX", "22501XXX", "22899XXX", "26133XXX"]
-            if traffic_res and isinstance(traffic_res, dict):
-                ranges_data = traffic_res.get("ranges", []) or traffic_res.get("data", [])
-                if ranges_data:
-                    for r in ranges_data:
-                        r_name = str(r)
-                        keyboard.append([InlineKeyboardButton(f"📌 Range: {r_name}", callback_data=f"range_{r_name}")])
-            
-            if not keyboard:
-                for dr in default_ranges:
-                    keyboard.append([InlineKeyboardButton(f"📌 Panel Range: {dr}", callback_data=f"range_{dr}")])
-
             keyboard.append([InlineKeyboardButton("🔄 Refresh Traffic", callback_data="refresh_traffic")])
             keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="back_home")])
             
@@ -346,11 +330,11 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         elif data == "refresh_traffic":
             await query.answer("🔄 Traffic refreshed!")
-            traffic_text = f"🕒 <b>Live Traffic & Ranges ({time.strftime('%I:%M %p')})</b>\n\n📊 ধারাবাহিক প্যানেল রেঞ্জসমূহ নিচে দেওয়া হলো:"
-            default_ranges = ["23762XXX", "88017XXX", "22501XXX", "22899XXX", "26133XXX"]
+            traffic_text = f"🕒 <b>Live Traffic & Panel Ranges ({time.strftime('%I:%M %p')})</b>\n\n📊 ধারাবাহিক প্যানেল রেঞ্জসমূহ নিচে দেওয়া হলো:"
+            panel_ranges = ["23762XXX", "88017XXX", "22501XXX", "22899XXX", "26133XXX", "23763XXX", "88018XXX"]
             keyboard = []
-            for dr in default_ranges:
-                keyboard.append([InlineKeyboardButton(f"📌 Panel Range: {dr}", callback_data=f"range_{dr}")])
+            for pr in panel_ranges:
+                keyboard.append([InlineKeyboardButton(f"📌 Range: {pr}", callback_data=f"range_{pr}")])
             keyboard.append([InlineKeyboardButton("🔄 Refresh Traffic", callback_data="refresh_traffic")])
             keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="back_home")])
             
@@ -374,6 +358,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "request_id": req_id,
                 "chat_id": query.message.chat_id,
                 "sent_otps": set(),
+                "global_sent_otps": set(),
                 "fetch_time": time.time()
             }
 
