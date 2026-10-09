@@ -18,6 +18,19 @@ USER_BALANCES = {}
 USER_WITHDRAW_INFO = {} 
 ACTIVE_USER_NUMBERS = {} 
 
+# প্যানেলের রিয়েল লাইভ রেঞ্জ ডেটা
+PANEL_LIVE_RANGES = [
+    {"country": "Libya", "operator": "Mobily", "range": "2189XXX", "status": "Idle"},
+    {"country": "Madagascar", "operator": "Telma", "range": "2613XXX", "status": "Idle"},
+    {"country": "Nepal", "operator": "MTN", "range": "97797XXX", "status": "Idle"},
+    {"country": "Norway", "operator": "Telenor", "range": "h1den", "status": "Idle"},
+    {"country": "Sudan", "operator": "Mobily", "range": "2491XXX", "status": "Good"},
+    {"country": "Sudan", "operator": "Mobily", "range": "249126XXX", "status": "Idle"},
+    {"country": "Sudan", "operator": "Zain", "range": "249127XXX", "status": "Idle"},
+    {"country": "Uzbekistan", "operator": "Ucell Mobile", "range": "998XXX", "status": "Idle"},
+    {"country": "Zambia", "operator": "Zamtel", "range": "260XXX", "status": "Good"}
+]
+
 def get_country_info(phone_number, api_country=""):
     if api_country and api_country.lower() != "other":
         return api_country, "INT", "🌍"
@@ -27,6 +40,11 @@ def get_country_info(phone_number, api_country=""):
     elif clean_num.startswith("225"): return "Ivory Coast", "CI", "🇨🇮"
     elif clean_num.startswith("228"): return "Togo", "TG", "🇹🇬"
     elif clean_num.startswith("261"): return "Madagascar", "MG", "🇲🇬"
+    elif clean_num.startswith("218"): return "Libya", "LY", "🇱🇾"
+    elif clean_num.startswith("977"): return "Nepal", "NP", "🇳🇵"
+    elif clean_num.startswith("249"): return "Sudan", "SD", "🇸🇩"
+    elif clean_num.startswith("998"): return "Uzbekistan", "UZ", "🇺🇿"
+    elif clean_num.startswith("260"): return "Zambia", "ZM", "🇿🇲"
     else: return "International", "INT", "🌍"
 
 def get_mk_number_sync(target_range):
@@ -45,7 +63,6 @@ def get_mk_number_sync(target_range):
             if isinstance(data, list) and len(data) > 0:
                 data = data[0]
             
-            # API v2 অনুযায়ী সঠিক ফিল্ড চেক
             phone = data.get("full_number") or data.get("number")
             req_id = data.get("request_id")
             country = data.get("country", "International")
@@ -56,7 +73,7 @@ def get_mk_number_sync(target_range):
         print(f"MK API Error: {e}")
     return None, None, None
 
-async def get_mk_number(target_range="23762XXX"):
+async def get_mk_number(target_range="2613XXX"):
     return await asyncio.to_thread(get_mk_number_sync, target_range)
 
 def check_status_sync(request_ids):
@@ -87,7 +104,7 @@ async def personal_otp_checker(application):
 
             for user_id, u_info in list(ACTIVE_USER_NUMBERS.items()):
                 fetch_time = u_info.get("fetch_time", 0)
-                if (current_time - fetch_time) > 900: # ১৫ মিনিট মেয়াদ
+                if (current_time - fetch_time) > 900: 
                     continue
                 req_id = u_info.get("request_id")
                 if req_id:
@@ -120,7 +137,7 @@ async def personal_otp_checker(application):
                             global_sent_otps = u_info.setdefault("global_sent_otps", set())
                             sent_set = u_info.setdefault("sent_otps", set())
                             
-                            # ইউজারের পার্সোনাল বটে শুধু তার নিজস্ব নাম্বারের OTP পাঠানো এবং ২০ পয়সা যোগ করা
+                            # ১. ইউজারের পার্সোনাল বটে শুধু তার নিজস্ব নাম্বারের OTP পাঠানো এবং ২০ পয়সা (0.20 টাকা) যোগ করা
                             if str(otp_code) not in sent_set:
                                 sent_set.add(str(otp_code))
                                 
@@ -152,7 +169,7 @@ async def personal_otp_checker(application):
                                 except Exception as per_ex:
                                     print(f"Personal Send Error: {per_ex}")
 
-                            # প্যানেলের সব রিয়েল OTP মূল গ্রুপে (-1004436883235) পাঠানো
+                            # ২. প্যানেলের সব রিয়েল OTP মূল গ্রুপে (-1004436883235) পাঠানো
                             if str(otp_code) not in global_sent_otps:
                                 global_sent_otps.add(str(otp_code))
                                 _, _, flag = get_country_info(u_phone, country)
@@ -245,14 +262,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if "Get API Number" in text:
             USER_STATES[user_id] = None
             wait_msg = await update.message.reply_text("⏳ Allocating fresh number from MK Network...")
-            user_range = USER_RANGES.get(user_id, "23762XXX")
+            user_range = USER_RANGES.get(user_id, "2613XXX")
             
             phone, req_id, country = await get_mk_number(target_range=user_range)
             try: await wait_msg.delete()
             except: pass
 
             if not phone or not req_id:
-                await update.message.reply_text(f"❌ No stock available for range <code>{user_range}</code>.", parse_mode="HTML")
+                await update.message.reply_text(f"❌ No stock available for range <code>{user_range}</code>. Please select another range from 'Live Traffic'.", parse_mode="HTML")
                 return
 
             ACTIVE_USER_NUMBERS[user_id] = {
@@ -271,16 +288,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         elif "Set Range" in text:
             USER_STATES[user_id] = "WAITING_FOR_RANGE"
-            await update.message.reply_text("🔴 Please send your target number range (e.g. 23762XXX):")
+            await update.message.reply_text("🔴 Please send your target number range (e.g. 2613XXX):")
 
         elif "Live Traffic" in text or "TRAFFIC" in text:
             USER_STATES[user_id] = None
-            traffic_text = f"🕒 <b>Live Traffic & Panel Ranges ({time.strftime('%I:%M %p')})</b>\n\n📊 ধারাবাহিক প্যানেল রেঞ্জসমূহ নিচে দেওয়া হলো:"
+            traffic_text = f"🕒 <b>Live Gateway Matrix ({time.strftime('%I:%M %p')})</b>\n\n📊 প্যানেলের লাইভ রেঞ্জসমূহ নিচে দেওয়া হলো। যেকোনো একটিতে ক্লিক করে সিলেক্ট করুন:"
             
-            panel_ranges = ["23762XXX", "88017XXX", "22501XXX", "22899XXX", "26133XXX", "23763XXX", "88018XXX"]
             keyboard = []
-            for pr in panel_ranges:
-                keyboard.append([InlineKeyboardButton(f"📌 Range: {pr}", callback_data=f"range_{pr}")])
+            for item in PANEL_LIVE_RANGES:
+                btn_text = f"{item['country']} ({item['operator']}) - {item['range']} [{item['status']}]"
+                keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"range_{item['range']}")])
             
             keyboard.append([InlineKeyboardButton("🔄 Refresh Traffic", callback_data="refresh_traffic")])
             keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="back_home")])
@@ -319,15 +336,15 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif data.startswith("range_"):
             selected_range = data.replace("range_", "")
             USER_RANGES[user_id] = selected_range
-            await query.answer(f"Range set to {selected_range}!", show_alert=True)
+            await query.answer(f"Range set to {selected_range} successfully!", show_alert=True)
 
         elif data == "refresh_traffic":
             await query.answer("🔄 Traffic refreshed!")
-            traffic_text = f"🕒 <b>Live Traffic & Panel Ranges ({time.strftime('%I:%M %p')})</b>\n\n📊 ধারাবাহিক প্যানেল রেঞ্জসমূহ নিচে দেওয়া হলো:"
-            panel_ranges = ["23762XXX", "88017XXX", "22501XXX", "22899XXX", "26133XXX", "23763XXX", "88018XXX"]
+            traffic_text = f"🕒 <b>Live Gateway Matrix ({time.strftime('%I:%M %p')})</b>\n\n📊 প্যানেলের লাইভ রেঞ্জসমূহ নিচে দেওয়া হলো। যেকোনো একটিতে ক্লিক করে সিলেক্ট করুন:"
             keyboard = []
-            for pr in panel_ranges:
-                keyboard.append([InlineKeyboardButton(f"📌 Range: {pr}", callback_data=f"range_{pr}")])
+            for item in PANEL_LIVE_RANGES:
+                btn_text = f"{item['country']} ({item['operator']}) - {item['range']} [{item['status']}]"
+                keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"range_{item['range']}")])
             keyboard.append([InlineKeyboardButton("🔄 Refresh Traffic", callback_data="refresh_traffic")])
             keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="back_home")])
             
@@ -339,7 +356,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         elif data == "change_number":
             await query.answer("🔄 Fetching new number...")
-            user_range = USER_RANGES.get(user_id, "23762XXX")
+            user_range = USER_RANGES.get(user_id, "2613XXX")
             phone, req_id, country = await get_mk_number(target_range=user_range)
             
             if not phone or not req_id:
