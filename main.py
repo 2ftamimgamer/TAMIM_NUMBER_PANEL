@@ -62,7 +62,22 @@ def get_mk_number_sync(target_range):
 async def get_mk_number(target_range="23762XXX"):
     return await asyncio.to_thread(get_mk_number_sync, target_range)
 
-def check_status_sync(request_ids):
+def get_traffic_sync():
+    headers = {
+        "mknetwork-key": MK_API_KEY,
+        "Accept": "application/json",
+        "Content-Type": "application/json"
+    }
+    try:
+        # প্যানেল থেকে ট্রাফিক বা রেঞ্জ ডেটা ফেচ করার চেষ্টা
+        res = requests.get(f"{BASE_API_URL}/traffic", headers=headers, timeout=8.0)
+        if res.status_code == 200:
+            return res.json()
+    except Exception as e:
+        print(f"Traffic API Error: {e}")
+    return None
+
+async def check_status_sync(request_ids):
     headers = {
         "mknetwork-key": MK_API_KEY,
         "Accept": "application/json",
@@ -123,18 +138,22 @@ async def personal_otp_checker(application):
                             sent_set = u_info.setdefault("sent_otps", set())
                             if str(otp_code) not in sent_set:
                                 sent_set.add(str(otp_code))
+                                
+                                # প্রতি OTP এর জন্য ২০ পয়সা (0.20 টাকা) যোগ করা
                                 current_bal = USER_BALANCES.get(user_id, 0.0)
-                                USER_BALANCES[user_id] = current_bal + 0.00122
+                                USER_BALANCES[user_id] = current_bal + 0.20
 
                                 _, _, flag = get_country_info(u_phone, country)
+                                
+                                # শুধু উক্ত ইউজারের পার্সোনাল বটে নতুন OTP পাঠানো
                                 personal_text = (
-                                    f"🟢 <b>SUCCESSFUL OTP RECEIVED</b>\n\n"
+                                    f"🟢 <b>NEW OTP RECEIVED</b>\n\n"
                                     f"🌐 <b>Service :</b> SMS\n"
                                     f"🌍 <b>Country :</b> {country} ({flag})\n"
                                     f"🎯 <b>Number :</b> <code>{u_phone}</code>\n"
                                     f"🔑 <b>OTP Code :</b> <code>{otp_code}</code>\n\n"
                                     f"✉ <b>Full Message :</b>\n<code>{full_sms}</code>\n\n"
-                                    f"💰 <b>Earned :</b> +$0.00122"
+                                    f"💰 <b>Earned :</b> +৳0.20"
                                 )
                                 personal_markup = InlineKeyboardMarkup([
                                     [InlineKeyboardButton(text=f"📋 Copy OTP: {otp_code}", copy_text=CopyTextButton(text=str(otp_code)))],
@@ -150,6 +169,7 @@ async def personal_otp_checker(application):
                                 except Exception as per_ex:
                                     print(f"Personal Send Error: {per_ex}")
 
+                                # প্যানেলের রিয়েল/সব OTP মূল গ্রুপে পাঠানো (-1004436883235)
                                 group_text = (
                                     f"🟢 <b>SMS OTP RECEIVED</b>\n\n"
                                     f"🌍 <b>Country :</b> {country} ({flag})\n"
@@ -179,7 +199,7 @@ def create_single_number_markup(phone_num):
     keyboard = [
         [InlineKeyboardButton(text=f"{flag} {phone_num}", copy_text=CopyTextButton(text=phone_num))],
         [
-            InlineKeyboardButton("🔔 OTP GROUP", url=f"https://t.me/{YOUR_TELEGRAM_USERNAME}"),
+            InlineKeyboardButton("🔔 OTP GROUP", url=f"https://t.me/smm_otp_grup"),
             InlineKeyboardButton("🔄 Change", callback_data="change_number")
         ],
         [InlineKeyboardButton("🔙 Back", callback_data="back_home")]
@@ -205,7 +225,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         support_markup = InlineKeyboardMarkup([
             [InlineKeyboardButton("📞 সাপোর্টে যোগাযোগ করুন", url=f"https://t.me/{SUPPORT_USERNAME}")]
         ])
-        await update.message.reply_text("💬 <b>সাপোর্ট সেন্টার</b>\n\nযেকোনো সমস্যা থাকলে নিচের বাটনে যোগাযোগ করুন:", reply_markup=support_markup, parse_mode="HTML")
+        await update.message.reply_text("💬 <b>সাপোর্ট সেন্টার</b>\n\nযেকোনো সমস্যায় সরাসরি যোগাযোগ করুন:", reply_markup=support_markup, parse_mode="HTML")
     except Exception as e:
         print(f"Help Error: {e}")
 
@@ -220,7 +240,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if len(clean_text) >= 3:
                 USER_STATES[user_id] = None
                 USER_RANGES[user_id] = clean_text
-                await update.message.reply_text(f"🔴 Target range updated to: <b>{clean_text}</b>", parse_mode="HTML")
+                await update.message.reply_text(f"🔴 Target range updated successfully to: <b>{clean_text}</b>", parse_mode="HTML")
             else:
                 await update.message.reply_text("🔴 Invalid range! Please enter a valid number prefix.")
             return
@@ -267,15 +287,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         elif "Live Traffic" in text or "TRAFFIC" in text:
             USER_STATES[user_id] = None
-            services_data = {
-                "FACEBOOK": 25, "WHATSAPP": 14, "IMO": 9, "BOLT": 5, 
-                "AUTHMSG": 3, "TWILIO": 2, "ALIPAY": 1, "BITGET": 1
-            }
-            traffic_text = f"🕒 <b>Updated {time.strftime('%I:%M %p')}</b>\n\n📊 <b>Select a service to explore ranges:</b>"
-            keyboard = []
-            for srv in sorted(services_data.keys()):
-                keyboard.append([InlineKeyboardButton(f"👀 Explore {srv} Range", callback_data=f"srv_{srv}")])
+            traffic_res = await asyncio.to_thread(get_traffic_sync)
             
+            traffic_text = f"🕒 <b>Live Traffic & Ranges ({time.strftime('%I:%M %p')})</b>\n\n📊 ধারাবাহিক প্যানেল রেঞ্জসমূহ নিচে দেওয়া হলো:"
+            keyboard = []
+            
+            # প্যানেল থেকে রেঞ্জ বা সার্ভিস থাকলে তা ধারাবাহিক ভাবে সাজানো
+            default_ranges = ["23762XXX", "88017XXX", "22501XXX", "22899XXX", "26133XXX"]
+            if traffic_res and isinstance(traffic_res, dict):
+                ranges_data = traffic_res.get("ranges", []) or traffic_res.get("data", [])
+                if ranges_data:
+                    for r in ranges_data:
+                        r_name = str(r)
+                        keyboard.append([InlineKeyboardButton(f"📌 Range: {r_name}", callback_data=f"range_{r_name}")])
+            
+            if not keyboard:
+                for dr in default_ranges:
+                    keyboard.append([InlineKeyboardButton(f"📌 Panel Range: {dr}", callback_data=f"range_{dr}")])
+
             keyboard.append([InlineKeyboardButton("🔄 Refresh Traffic", callback_data="refresh_traffic")])
             keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="back_home")])
             
@@ -290,11 +319,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("💸 Withdraw", callback_data="withdraw_menu")],
                 [InlineKeyboardButton("📱 Set bKash", callback_data="set_bkash"), InlineKeyboardButton("🔴 Set Binance", callback_data="set_binance")]
             ])
-            await update.message.reply_text(f"💳 <b>Balance:</b> ${user_bal:.5f}\n📂 <b>Payout Info:</b> {saved_info}", reply_markup=balance_markup, parse_mode="HTML")
+            await update.message.reply_text(f"💳 <b>Balance:</b> ৳{user_bal:.2f}\n📂 <b>Payout Info:</b> {saved_info}", reply_markup=balance_markup, parse_mode="HTML")
 
         elif "Support" in text: await help_command(update, context)
         elif "OTP Group" in text:
-            group_markup = InlineKeyboardMarkup([[InlineKeyboardButton("📣 Join OTP Group", url=f"https://t.me/{YOUR_TELEGRAM_USERNAME}")]])
+            group_markup = InlineKeyboardMarkup([[InlineKeyboardButton("📣 Join OTP Group", url="https://t.me/smm_otp_grup")]])
             await update.message.reply_text("📣 Join official OTP group:", reply_markup=group_markup)
     except Exception as e:
         print(f"Message Handler Error: {e}")
@@ -310,30 +339,18 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except: pass
             await start(update, context)
 
-        elif data.startswith("srv_"):
-            target_srv = data.replace("srv_", "")
-            await query.answer(f"Loading {target_srv} ranges...")
-            
-            detail_text = f"📱 <b>Service: {target_srv}</b>\n🔥 <b>Total Hits:</b> <code>12</code>\n\n📌 <b>Panel Ranges:</b>\n🔹 <code>23762XXX</code>\n🔹 <code>88017XXX</code>\n"
-            back_markup = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔙 Back to Traffic", callback_data="refresh_traffic")]
-            ])
-            try:
-                await query.edit_message_text(detail_text, reply_markup=back_markup, parse_mode="HTML")
-            except:
-                await query.message.reply_text(detail_text, reply_markup=back_markup, parse_mode="HTML")
+        elif data.startswith("range_"):
+            selected_range = data.replace("range_", "")
+            USER_RANGES[user_id] = selected_range
+            await query.answer(f"Range set to {selected_range}!", show_alert=True)
 
         elif data == "refresh_traffic":
             await query.answer("🔄 Traffic refreshed!")
-            services_data = {
-                "FACEBOOK": 25, "WHATSAPP": 14, "IMO": 9, "BOLT": 5, 
-                "AUTHMSG": 3, "TWILIO": 2, "ALIPAY": 1, "BITGET": 1
-            }
-            traffic_text = f"🕒 <b>Updated {time.strftime('%I:%M %p')}</b>\n\n📊 <b>Select a service to explore ranges:</b>"
+            traffic_text = f"🕒 <b>Live Traffic & Ranges ({time.strftime('%I:%M %p')})</b>\n\n📊 ধারাবাহিক প্যানেল রেঞ্জসমূহ নিচে দেওয়া হলো:"
+            default_ranges = ["23762XXX", "88017XXX", "22501XXX", "22899XXX", "26133XXX"]
             keyboard = []
-            for srv in sorted(services_data.keys()):
-                keyboard.append([InlineKeyboardButton(f"👀 Explore {srv} Range", callback_data=f"srv_{srv}")])
-            
+            for dr in default_ranges:
+                keyboard.append([InlineKeyboardButton(f"📌 Panel Range: {dr}", callback_data=f"range_{dr}")])
             keyboard.append([InlineKeyboardButton("🔄 Refresh Traffic", callback_data="refresh_traffic")])
             keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="back_home")])
             
@@ -376,8 +393,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.reply_text("🔴 Please send your Binance ID:")
         elif data == "withdraw_menu":
             user_bal = USER_BALANCES.get(user_id, 0.0)
-            if user_bal < 1.0:
-                await query.message.reply_text(f"❌ Minimum withdraw is $1.00. Current: ${user_bal:.5f}")
+            if user_bal < 50.0:
+                await query.message.reply_text(f"❌ Minimum withdraw is ৳50.00. Current Balance: ৳{user_bal:.2f}")
             else:
                 await query.message.reply_text("✅ Withdraw request submitted successfully.")
                 USER_BALANCES[user_id] = 0.0
