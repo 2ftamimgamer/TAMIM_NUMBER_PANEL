@@ -52,8 +52,7 @@ def get_mk_number_sync(target_range):
         "Accept": "application/json",
         "Content-Type": "application/json"
     }
-    # রেঞ্জ থেকে XXX বা অতিরিক্ত অক্ষর পরিষ্কার করা যাতে প্যানেল সহজে চিনতে পারে
-    clean_range = str(target_range).replace("XXX", "").replace("x", "").strip()
+    clean_range = str(target_range).replace("XXX", "").replace("x", "").replace("X", "").strip()
     payload = {"range": clean_range}
     try:
         res = requests.post(f"{BASE_API_URL}/getnum/number", headers=headers, json=payload, timeout=10.0)
@@ -73,7 +72,7 @@ def get_mk_number_sync(target_range):
         print(f"MK API Error: {e}")
     return None, None, None
 
-async def get_mk_number(target_range="2613"):
+async def get_mk_number(target_range="2491"):
     return await asyncio.to_thread(get_mk_number_sync, target_range)
 
 def check_status_sync(request_ids):
@@ -238,7 +237,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         state = USER_STATES.get(user_id)
 
         if state == "WAITING_FOR_RANGE":
-            clean_text = text.replace("XXX", "").replace("x", "").strip()
+            clean_text = text.replace("XXX", "").replace("x", "").replace("X", "").strip()
             if len(clean_text) >= 2:
                 USER_STATES[user_id] = None
                 USER_RANGES[user_id] = clean_text
@@ -260,14 +259,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if "Get API Number" in text:
             USER_STATES[user_id] = None
             wait_msg = await update.message.reply_text("⏳ Allocating fresh number from MK Network...")
-            user_range = USER_RANGES.get(user_id, "2613")
+            user_range = USER_RANGES.get(user_id, "2491")
             
             phone, req_id, country = await get_mk_number(target_range=user_range)
             try: await wait_msg.delete()
             except: pass
 
             if not phone or not req_id:
-                await update.message.reply_text(f"❌ No stock available for range <code>{user_range}</code>. Please select another range from 'Live Traffic'.", parse_mode="HTML")
+                await update.message.reply_text(f"❌ No stock available for range <code>{user_range}</code>. Please select another active range from 'Live Traffic'.", parse_mode="HTML")
                 return
 
             ACTIVE_USER_NUMBERS[user_id] = {
@@ -286,11 +285,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         elif "Set Range" in text:
             USER_STATES[user_id] = "WAITING_FOR_RANGE"
-            await update.message.reply_text("🔴 Please send your target number range prefix (e.g. 2613 or 2491):")
+            await update.message.reply_text("🔴 Please send your target number range prefix (e.g. 2491 or 260):")
 
         elif "Live Traffic" in text or "TRAFFIC" in text:
             USER_STATES[user_id] = None
-            traffic_text = f"🕒 <b>Live Gateway Matrix ({time.strftime('%I:%M %p')})</b>\n\n📊 প্যানেলের লাইভ রেঞ্জসমূহ নিচে দেওয়া হলো। যেকোনো একটিতে ক্লিক করে সিলেক্ট করুন:"
+            traffic_text = f"🕒 <b>Live Gateway Matrix ({time.strftime('%I:%M %p')})</b>\n\n📊 প্যানেলের লাইভ রেঞ্জসমূহ নিচে দেওয়া হলো। যেটিতে স্টক আছে (যেমন Sudan বা Zambia) সেটিতে ক্লিক করুন:"
             
             keyboard = []
             for item in PANEL_LIVE_RANGES:
@@ -332,13 +331,13 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await start(update, context)
 
         elif data.startswith("range_"):
-            selected_range = data.replace("range_", "").replace("XXX", "").strip()
+            selected_range = data.replace("range_", "").replace("XXX", "").replace("x", "").replace("X", "").strip()
             USER_RANGES[user_id] = selected_range
             await query.answer(f"Range set to {selected_range} successfully!", show_alert=True)
 
         elif data == "refresh_traffic":
             await query.answer("🔄 Traffic refreshed!")
-            traffic_text = f"🕒 <b>Live Gateway Matrix ({time.strftime('%I:%M %p')})</b>\n\n📊 প্যানেলের লাইভ রেঞ্জসমূহ নিচে দেওয়া হলো। যেকোনো একটিতে ক্লিক করে সিলেক্ট করুন:"
+            traffic_text = f"🕒 <b>Live Gateway Matrix ({time.strftime('%I:%M %p')})</b>\n\n📊 প্যানেলের লাইভ রেঞ্জসমূহ নিচে দেওয়া হলো। যেটিতে স্টক আছে সেটিতে ক্লিক করুন:"
             keyboard = []
             for item in PANEL_LIVE_RANGES:
                 btn_text = f"{item['country']} ({item['operator']}) - {item['range']} [{item['status']}]"
@@ -354,7 +353,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         elif data == "change_number":
             await query.answer("🔄 Fetching new number...")
-            user_range = USER_RANGES.get(user_id, "2613")
+            user_range = USER_RANGES.get(user_id, "2491")
             phone, req_id, country = await get_mk_number(target_range=user_range)
             
             if not phone or not req_id:
