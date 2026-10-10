@@ -19,15 +19,15 @@ USER_WITHDRAW_INFO = {}
 ACTIVE_USER_NUMBERS = {} 
 
 PANEL_LIVE_RANGES = [
-    {"country": "Libya", "operator": "Mobily", "range": "2189", "status": "Idle"},
-    {"country": "Madagascar", "operator": "Telma", "range": "2613", "status": "Idle"},
-    {"country": "Nepal", "operator": "MTN", "range": "97797", "status": "Idle"},
+    {"country": "Libya", "operator": "Mobily", "range": "2189XXX", "status": "Idle"},
+    {"country": "Madagascar", "operator": "Telma", "range": "2613XXX", "status": "Idle"},
+    {"country": "Nepal", "operator": "MTN", "range": "97797XXX", "status": "Idle"},
     {"country": "Norway", "operator": "Telenor", "range": "h1den", "status": "Idle"},
-    {"country": "Sudan", "operator": "Mobily", "range": "2491", "status": "Good"},
-    {"country": "Sudan", "operator": "Mobily", "range": "249126", "status": "Idle"},
-    {"country": "Sudan", "operator": "Zain", "range": "249127", "status": "Idle"},
-    {"country": "Uzbekistan", "operator": "Ucell Mobile", "range": "998", "status": "Idle"},
-    {"country": "Zambia", "operator": "Zamtel", "range": "260", "status": "Good"}
+    {"country": "Sudan", "operator": "Mobily", "range": "2491XXX", "status": "Good"},
+    {"country": "Sudan", "operator": "Mobily", "range": "249126XXX", "status": "Idle"},
+    {"country": "Sudan", "operator": "Zain", "range": "249127XXX", "status": "Idle"},
+    {"country": "Uzbekistan", "operator": "Ucell Mobile", "range": "998XXX", "status": "Idle"},
+    {"country": "Zambia", "operator": "Zamtel", "range": "260XXX", "status": "Good"}
 ]
 
 def get_country_info(phone_number, api_country=""):
@@ -52,7 +52,8 @@ def get_mk_number_sync(target_range):
         "Accept": "application/json",
         "Content-Type": "application/json"
     }
-    clean_range = str(target_range).replace("XXX", "").replace("x", "").replace("X", "").strip()
+    # সরাসরি ব্যবহারকারীর দেওয়া রেঞ্জ (যেমন 260XXX) পাঠানো হচ্ছে
+    clean_range = str(target_range).strip()
     payload = {"range": clean_range}
     try:
         res = requests.post(f"{BASE_API_URL}/getnum/number", headers=headers, json=payload, timeout=10.0)
@@ -72,7 +73,7 @@ def get_mk_number_sync(target_range):
         print(f"MK API Error: {e}")
     return None, None, None
 
-async def get_mk_number(target_range="2491"):
+async def get_mk_number(target_range="260XXX"):
     return await asyncio.to_thread(get_mk_number_sync, target_range)
 
 def check_status_sync(request_ids):
@@ -237,13 +238,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         state = USER_STATES.get(user_id)
 
         if state == "WAITING_FOR_RANGE":
-            clean_text = text.replace("XXX", "").replace("x", "").replace("X", "").strip()
+            clean_text = text.strip()
             if len(clean_text) >= 2:
                 USER_STATES[user_id] = None
                 USER_RANGES[user_id] = clean_text
                 await update.message.reply_text(f"🔴 Target range updated successfully to: <b>{clean_text}</b>", parse_mode="HTML")
             else:
-                await update.message.reply_text("🔴 Invalid range! Please enter a valid number prefix.")
+                await update.message.reply_text("🔴 Invalid range! Please enter a valid number range.")
             return
         elif state == "WAITING_FOR_BKASH":
             USER_STATES[user_id] = None
@@ -259,7 +260,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if "Get API Number" in text:
             USER_STATES[user_id] = None
             wait_msg = await update.message.reply_text("⏳ Allocating fresh number from MK Network...")
-            user_range = USER_RANGES.get(user_id, "2491")
+            user_range = USER_RANGES.get(user_id, "260XXX")
             
             phone, req_id, country = await get_mk_number(target_range=user_range)
             try: await wait_msg.delete()
@@ -285,11 +286,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         elif "Set Range" in text:
             USER_STATES[user_id] = "WAITING_FOR_RANGE"
-            await update.message.reply_text("🔴 Please send your target number range prefix (e.g. 2491 or 260):")
+            await update.message.reply_text("🔴 Please send your target number range (e.g. 260XXX):")
 
         elif "Live Traffic" in text or "TRAFFIC" in text:
             USER_STATES[user_id] = None
-            traffic_text = f"🕒 <b>Live Gateway Matrix ({time.strftime('%I:%M %p')})</b>\n\n📊 প্যানেলের লাইভ রেঞ্জসমূহ নিচে দেওয়া হলো। যেটিতে স্টক আছে (যেমন Sudan বা Zambia) সেটিতে ক্লিক করুন:"
+            traffic_text = f"🕒 <b>Live Gateway Matrix ({time.strftime('%I:%M %p')})</b>\n\n📊 প্যানেলের লাইভ রেঞ্জসমূহ নিচে দেওয়া হলো। যেকোনো একটিতে ক্লিক করুন:"
             
             keyboard = []
             for item in PANEL_LIVE_RANGES:
@@ -331,13 +332,13 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await start(update, context)
 
         elif data.startswith("range_"):
-            selected_range = data.replace("range_", "").replace("XXX", "").replace("x", "").replace("X", "").strip()
+            selected_range = data.replace("range_", "").strip()
             USER_RANGES[user_id] = selected_range
             await query.answer(f"Range set to {selected_range} successfully!", show_alert=True)
 
         elif data == "refresh_traffic":
             await query.answer("🔄 Traffic refreshed!")
-            traffic_text = f"🕒 <b>Live Gateway Matrix ({time.strftime('%I:%M %p')})</b>\n\n📊 প্যানেলের লাইভ রেঞ্জসমূহ নিচে দেওয়া হলো। যেটিতে স্টক আছে সেটিতে ক্লিক করুন:"
+            traffic_text = f"🕒 <b>Live Gateway Matrix ({time.strftime('%I:%M %p')})</b>\n\n📊 প্যানেলের লাইভ রেঞ্জসমূহ নিচে দেওয়া হলো। যেকোনো একটিতে ক্লিক করুন:"
             keyboard = []
             for item in PANEL_LIVE_RANGES:
                 btn_text = f"{item['country']} ({item['operator']}) - {item['range']} [{item['status']}]"
@@ -353,7 +354,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         elif data == "change_number":
             await query.answer("🔄 Fetching new number...")
-            user_range = USER_RANGES.get(user_id, "2491")
+            user_range = USER_RANGES.get(user_id, "260XXX")
             phone, req_id, country = await get_mk_number(target_range=user_range)
             
             if not phone or not req_id:
